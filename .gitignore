@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+output/
+.env
+.env.*
+BUMPKIN_GOAL_PLAN.md
+.sniff-checkpoint*.json

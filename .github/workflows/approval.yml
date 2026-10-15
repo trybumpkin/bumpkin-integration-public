@@ -1,0 +1,81 @@
+name: Synthetic environment approval
+run-name: dummy review ${{ inputs.candidate_fingerprint }}
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_fingerprint:
+        description: Final candidate to review; enter the exact approval comment in GitHub
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: synthetic-approval
+  cancel-in-progress: false
+jobs:
+  read-only-probe:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require an actual write rejection
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROBE_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          assert os.environ['GH_REPO'] == 'trybumpkin/bumpkin-integration-public'
+          url = 'https://api.github.com/repos/trybumpkin/bumpkin-integration-public/git/refs'
+          ref = 'refs/tags/integration-permission-probe-read-' + os.environ['GITHUB_RUN_ID']
+          data = json.dumps({'ref': ref, 'sha': os.environ['PROBE_SHA']}).encode()
+          request = urllib.request.Request(url, data=data, method='POST', headers={
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  raise SystemExit('Unexpected write success: ' + str(response.status))
+          except urllib.error.HTTPError as error:
+              if error.code != 403:
+                  raise SystemExit('Unexpected denial status: ' + str(error.code))
+              print('Read-only job token: actual tag write denied with HTTP 403')
+          PY
+  approved-marker:
+    needs: read-only-probe
+    if: github.ref == 'refs/heads/main'
+    environment: bumpkin-integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Record reviewed subject and probe protected token
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROBE_SHA: ${{ github.sha }}
+          CANDIDATE_FINGERPRINT: ${{ inputs.candidate_fingerprint }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+          assert os.environ['GH_REPO'] == 'trybumpkin/bumpkin-integration-public'
+          fingerprint = os.environ['CANDIDATE_FINGERPRINT']
+          assert re.fullmatch('[0-9a-f]{64}', fingerprint)
+          base = 'https://api.github.com/repos/trybumpkin/bumpkin-integration-public/git/'
+          ref = 'tags/integration-permission-probe-write-' + os.environ['GITHUB_RUN_ID']
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                     'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'}
+          data = json.dumps({'ref': 'refs/' + ref, 'sha': os.environ['PROBE_SHA']}).encode()
+          create = urllib.request.Request(base + 'refs', data=data, method='POST', headers=headers)
+          with urllib.request.urlopen(create, timeout=20) as response:
+              assert response.status == 201
+          remove = urllib.request.Request(base + 'refs/' + ref, method='DELETE', headers=headers)
+          with urllib.request.urlopen(remove, timeout=20) as response:
+              assert response.status == 204
+          print('Protected job token: dummy tag created (201) and removed (204)')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('Synthetic review marker only; private engine was not executed.\n\n')
+              summary.write('Final candidate: `' + fingerprint + '`\n')
+          PY

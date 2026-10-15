@@ -1,0 +1,61 @@
+name: Synthetic exact-source build
+run-name: dummy build ${{ inputs.draft_fingerprint }}
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact dummy source commit
+        required: true
+      draft_fingerprint:
+        description: Local deterministic draft fingerprint
+        required: true
+      version:
+        description: Synthetic release tag
+        required: true
+        default: v0.2.0
+permissions:
+  contents: read
+concurrency:
+  group: synthetic-build
+  cancel-in-progress: false
+jobs:
+  build:
+    name: dummy-tests
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate manual inputs before checkout
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          DRAFT_FINGERPRINT: ${{ inputs.draft_fingerprint }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          assert re.fullmatch('[0-9a-f]{40}', os.environ['SOURCE_SHA'])
+          assert re.fullmatch('[0-9a-f]{64}', os.environ['DRAFT_FINGERPRINT'])
+          assert re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', os.environ['RELEASE_VERSION'])
+          PY
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Test and package dummy source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          DRAFT_FINGERPRINT: ${{ inputs.draft_fingerprint }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          WORKFLOW_SHA: ${{ github.sha }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 scripts/build_fixture.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bumpkin-build-dummy-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            output/release.zip
+            output/build-evidence.json
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: false

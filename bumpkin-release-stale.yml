@@ -1,0 +1,12 @@
+repository: trybumpkin/bumpkin-integration-public
+target: dummy-release
+branch: main
+build_workflow: .github/workflows/build.yml
+publish_workflow: .github/workflows/approval.yml
+environment: bumpkin-integration
+approvers:
+  - anasalsharif
+required_checks:
+  - dummy-tests
+asset_name: release.zip
+approval_max_age_seconds: 1

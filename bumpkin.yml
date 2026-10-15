@@ -1,0 +1,8 @@
+public_api:
+  entrypoints:
+    - src/dummy_release/__init__.py
+  paths:
+    - src/dummy_release/**
+policy_mode: strict_semver
+semantic_fallback: false
+docs_only_label: NO_BUMP
