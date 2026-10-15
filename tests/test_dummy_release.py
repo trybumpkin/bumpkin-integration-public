@@ -12,6 +12,9 @@ class GreetingTests(unittest.TestCase):
     def test_empty_name(self):
         self.assertEqual(greet(""), "Hello, !")
 
+    def test_optional_emphasis(self):
+        self.assertEqual(greet("Ada", excited=True), "Hello, Ada!!")
+
 
 if __name__ == "__main__":
     unittest.main()
